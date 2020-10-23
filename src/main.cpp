@@ -33,12 +33,30 @@ string hasData(string s) {
 int main() {
   uWS::Hub h;
 
-  PID pid;
+  PID pids, pidt;
   /**
    * TODO: Initialize the pid variable.
    */
 
-  h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, 
+  // Only proportional.
+  // pids.Init(1.0, 0.0, 0.0);
+  // pidt.Init(1.0, 0.0, 0.0);
+
+  // Only integral.
+  // pids.Init(0.0, 1.0, 0.0);
+  // pidt.Init(0.0, 1.0, 0.0);
+
+  // Only differential.
+  // pids.Init(0.0, 0.0, 1.0);
+  // pidt.Init(0.0, 0.0, 1.0);
+
+  // Final parameters. Got this firstly by hand, to choose some reasonable value to start, then use twiddle, and pick the value at which 
+  // best error is reached. Because using json, could not re-run as the class did.
+  // Thus have to manually run multiple times with twiddle. And replace numbers manually before each run.
+  pids.Init(0.12, 0.0, 3.6);
+  pidt.Init(0.3, 0.0, 0.03);
+
+  h.onMessage([&pids, &pidt](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -56,21 +74,37 @@ int main() {
           double cte = std::stod(j[1]["cte"].get<string>());
           double speed = std::stod(j[1]["speed"].get<string>());
           double angle = std::stod(j[1]["steering_angle"].get<string>());
-          double steer_value;
+          double steer_value, throttle_value;
           /**
            * TODO: Calculate steering value here, remember the steering value is
            *   [-1, 1].
            * NOTE: Feel free to play around with the throttle and speed.
            *   Maybe use another PID controller to control the speed!
            */
+          pids.UpdateError(cte);
+          pidt.UpdateError(cte);
+
+          steer_value = -pids.TotalError();
+          if (steer_value > 1){
+            steer_value = 1;
+          } else if (steer_value < -1){
+            steer_value = -1;
+          }
+
+          throttle_value = 0.7 - pidt.TotalError();
+          if (throttle_value > 1){
+            throttle_value = 1;
+          } else if (throttle_value < -1){
+            throttle_value = -1;
+          }
           
           // DEBUG
-          std::cout << "CTE: " << cte << " Steering Value: " << steer_value 
+          std::cout << "CTE: " << cte << " Steering Value: " << steer_value << " Throttle Value: " << throttle_value
                     << std::endl;
 
           json msgJson;
           msgJson["steering_angle"] = steer_value;
-          msgJson["throttle"] = 0.3;
+          msgJson["throttle"] = throttle_value;
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           std::cout << msg << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
